@@ -28,63 +28,50 @@ class ClientModel(nn.Module):
 
         return prediction_scores
 
-def train_step(client_model, optimizer, input_ids, attention_mask, labels, server_url):
-    optimizer.zero_grad()
-    client_activations, attention_mask_to_server = client_model.forward_part1(input_ids, attention_mask)
+class ClientTrainer:
+    def __init__(self, client_id, dataloader, server_url, lr=1e-5):
+        self.client_id = client_id
+        self.dataloader = dataloader
+        self.server_url = server_url
 
-    detached_activations = client_activations.detach().requires_grad_()
+        self.model = ClientModel()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.loss_fn = nn.CrossEntropyLoss()
+    def train_epoch(self):
+        self.model.train()
+        total_loss = 0
+        for i, batch in enumerate(self.dataloader):
+            input_ids = batch['input_ids']
+            attention_mask = batch['attention_mask']
+            labels = batch['labels']
 
-    buffer = io.BytesIO()
-    torch.save({'activations': detached_activations, 'attention_mask': attention_mask_to_server}, buffer)
+            self.optimizer.zero_grad()
 
-    response = requests.post(f"{server_url}/forward", data=buffer.getvalue())
+            client_activations, attention_mask_to_server = self.model.forward_part1(input_ids, attention_mask)
 
-    server_output = torch.load(io.BytesIO(response.content), weights_only=False)
-    final_output = client_model.forward_part2(server_output)
+            detached_activations = client_activations.detach().requires_grad_()
+            buffer_fwd = io.BytesIO()
+            torch.save({'activations': detached_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
+            response_fwd = requests.post(f"{self.server_url}/forward", data=buffer_fwd.getvalue())
 
-    loss_func = nn.CrossEntropyLoss()
-    loss = loss_func(final_output.view(-1, client_model.config.vocab_size), labels.view(-1))
+            server_output = torch.load(io.BytesIO(response_fwd.content), weights_only=False)
+            final_output = self.model.forward_part2(server_output)
+            loss = self.loss_fn(final_output.view(-1, self.model.config.vocab_size), labels.view(-1))
 
-    loss.backward()
+            loss.backward()
+            grad_to_server = server_output.grad
 
-    grad_to_server = server_output.grad
+            buffer_bwd = io.BytesIO()
+            torch.save(grad_to_server, buffer_bwd)
+            response_bwd = requests.post(f"{self.server_url}/backward", data=buffer_bwd.getvalue())
 
-    grad_buffer = io.BytesIO()
-    torch.save(grad_to_server, grad_buffer)
-    response = requests.post(f"{server_url}/backward", data=grad_buffer.getvalue())
+            grad_from_server = torch.load(io.BytesIO(response_bwd.content), weights_only=False)
+            client_activations.backward(gradient=grad_from_server)
 
-    grad_from_server = torch.load(io.BytesIO(response.content), weights_only=False)
-    client_activations.backward(gradient=grad_from_server)
-
-    optimizer.step()
-
-    return loss.item()
-
-if __name__ == '__main__':
-    server_url = 'http://127.0.0.1:2778'
-
-    client_model = ClientModel()
-    client_optimizer = torch.optim.Adam(client_model.parameters(), lr=0.001)
-
-    vocab_size = client_model.config.vocab_size
-    mask_token_id = 103
-
-    input_ids = torch.randint(0, vocab_size, (4, 16))
-    labels = input_ids.clone()
-
-    prob_matrix = torch.full(labels.shape, 0.15)
-    masked_indices = torch.bernoulli(prob_matrix).bool()
-    labels[~masked_indices] = -100
-    input_ids[masked_indices] = mask_token_id
-    attention_mask = torch.ones_like(input_ids)
-
-    print("\n开始训练...")
-
-    for step in range(10):
-        try:
-            loss = train_step(client_model, client_optimizer, input_ids, attention_mask, labels, server_url)
-            print(f"Step {step + 1}/10, Loss: {loss:.4f}")
-        except requests.exceptions.ConnectionError as e:
-            print("\n错误：无法连接到服务器。请确保先运行了 'python server.py'。")
-            print(f"服务器地址: {server_url}")
-            break
+            self.optimizer.step()
+            total_loss += loss.item()
+            #每个epoch仅训练几个step
+            # if i >= 5:
+            #    break
+        avg_loss = total_loss / (i + 1)
+        print(f"Client {self.client_id} - Average Loss: {avg_loss:.4f}")

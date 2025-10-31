@@ -46,4 +46,39 @@ class WikiTextDataset(Dataset):
             'labels': labels
         }
 
-#还没写完
+def get_dataloaders(num_clients, batch_size):
+    print("Loading WikiText dataset...")
+
+    raw_dataset = load_dataset("wikitext", 'wikitext-2-raw-v1', split="train")
+
+    texts = [line for line in raw_dataset['text'] if len(line.strip()) > 0]
+
+    texts = texts[:10000]
+
+    tokenizer = RobertaTokenizer.from_pretrained(MODEL_NAME)
+
+    full_dataset = WikiTextDataset(texts, tokenizer)
+
+    #将数据分发给多个客户端
+
+    total_size = len(full_dataset)
+    indices = list(range(total_size))
+    split_size = total_size // num_clients
+    client_dataloaders = []
+
+    for i in range(num_clients):
+        start_idx = i * split_size
+        end_idx = (i + 1) * split_size if i != num_clients - 1 else total_size
+        client_indices = indices[start_idx:end_idx]
+        client_dataset = Subset(full_dataset, client_indices)
+        loader = DataLoader(client_dataset, batch_size=batch_size, shuffle=True)
+        client_dataloaders.append(loader)
+
+        print(f"客户端 {i} 分配到了 {len(client_dataset)} 条数据。")
+
+    return client_dataloaders
+
+if __name__ == "__main__":
+    dataloaders = get_dataloaders(num_clients=5, batch_size=8)
+    print(f"总共创建了 {len(dataloaders)} 个客户端数据加载器。")
+
