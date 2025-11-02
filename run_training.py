@@ -1,6 +1,7 @@
 from client import ClientTrainer
 from data_preparation import get_dataloaders
 import requests
+import multiprocessing
 
 NUM_CLIENTS = 5
 BATCH_SIZE = 64
@@ -8,48 +9,49 @@ GLOBAL_ROUNDS = 10
 LOCAL_EPOCHS = 50
 SERVER_URL = "http://192.168.1.151:16805"
 
-def run_sequential_training():
-    print("Step 1: Preparing data loaders for clients...")
-    client_dataloaders = get_dataloaders(num_clients=NUM_CLIENTS, batch_size=BATCH_SIZE)
+def client_task(client_id, dataloader):
+    print(f"Client {client_id} starting training...")
+    try:
+        requests.post(f"{SERVER_URL}/register_client", json={'client_id': client_id})
+    except:
+        print(f"Client {client_id} failed to connect to server.")
+        return
 
-    clients = [
-        ClientTrainer(client_id = i, dataloader = loader, server_url = SERVER_URL)
-        for i, loader in enumerate(client_dataloaders)
-    ]
-    best_val_loss = float('inf')
-    print("Step 2: Starting Sequential Training...")
+    trainer = ClientTrainer(client_id=client_id, dataloader=dataloader, server_url=SERVER_URL)
+    for epoch in range(LOCAL_EPOCHS):
+        print(f"客户端 {client_id}, 本地 Epoch {epoch + 1}/{LOCAL_EPOCHS}")
+        trainer.train_epoch()
+
+    print(f"Client {client_id} training finished.")
+
+def run_parallel_training():
+    print("Preparing data loaders for clients...")
+    client_dataloaders = get_dataloaders(num_clients=NUM_CLIENTS, batch_size=BATCH_SIZE)
 
     for round_num in range(GLOBAL_ROUNDS):
         print(f"\n===== 全局训练轮次 {round_num + 1}/{GLOBAL_ROUNDS} =====")
 
-        for client in clients:
-            print(f"--- 客户端 {client.client_id} 训练中 ---")
-            try:
-                for epoch in range(LOCAL_EPOCHS):
-                    client.train_epoch()
-            except requests.exceptions.ConnectionError:
-                print("服务器连接失败。")
-                return
-            except Exception as e:
-                print (f"客户端 {client.client_id} 训练时发生错误: {e}")
-                return
-        print(f"\n--- 全局轮次 {round_num + 1} 结束，开始评估 ---")
-        total_val_loss = 0
-        for client in clients:
-            val_loss = client.evaluate()
-            total_val_loss += val_loss
-        avg_val_loss = total_val_loss / len(clients)
-        print(f"===== 全局轮次 {round_num + 1} 平均验证损失: {avg_val_loss:.4f} =====")
+        processes = []
 
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            print(f"*** 发现新的最佳模型，验证损失为: {best_val_loss:.4f}。正在保存... ***")
-            try:
-                requests.get(f"{SERVER_URL}/save_model")
-            except requests.exceptions.ConnectionError:
-                print("服务器连接失败，无法保存模型。")
-                return
-    print("训练完成。")
+        for i in range(NUM_CLIENTS):
+            process = multiprocessing.Process(target=client_task, args=(f"client_{i}", client_dataloaders[i]))
+            processes.append(process)
+            process.start()
+
+        for process in processes:
+            process.join()
+
+        print(f"===== 全局训练轮次 {round_num + 1} 完成 =====\n")
+        print(f"正在尝试聚合模型...")
+        try:
+            response = requests.post(f"{SERVER_URL}/aggregate")
+            print(f"聚合响应: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"错误: 无法连接到服务器进行聚合 - {e}")
+            return
+
+    print("\n所有全局训练轮次完成。")
 
 if __name__ == "__main__":
-    run_sequential_training()
+    multiprocessing.set_start_method("spawn")
+    run_parallel_training()

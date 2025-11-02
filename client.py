@@ -51,7 +51,7 @@ class ClientTrainer:
 
             detached_activations = client_activations.detach().requires_grad_()
             buffer_fwd = io.BytesIO()
-            torch.save({'activations': detached_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
+            torch.save({'client_id': self.client_id, 'activations': detached_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
             response_fwd = requests.post(f"{self.server_url}/forward", data=buffer_fwd.getvalue())
 
             server_output = torch.load(io.BytesIO(response_fwd.content), weights_only=False)
@@ -87,7 +87,7 @@ class ClientTrainer:
                 client_activations, attention_mask_to_server = self.model.forward_part1(input_ids, attention_mask)
 
                 buffer_fwd = io.BytesIO()
-                torch.save({'activations': client_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
+                torch.save({'client_id': self.client_id, 'activations': client_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
                 response_fwd = requests.post(f"{self.server_url}/forward_eval", data=buffer_fwd.getvalue())
 
                 server_output = torch.load(io.BytesIO(response_fwd.content), weights_only=False)
