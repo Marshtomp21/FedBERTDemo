@@ -14,10 +14,11 @@ https://dl.acm.org/doi/10.1145/3510033
 ### To Do List
 1. [x] Apply the framework to real datasets such as WikiText-103.
 2. [x] Implement sequential training strategy.
-3. [ ] Implement model validation and evaluation.
-4. [ ] Implement parallel training strategy.
+3. [x] Implement model validation.
+4. [ ] Implement model testing.
+5. [ ] Implement parallel training strategy.
 
 ### Setup
-* Ensure that local port 2778 is not in use.
+* Ensure that local port 2778 is not in use or change the port number in `server.py` and `run_training.py`.
 * Start the server: Run `server.py` in a terminal.
 * Start the client: Run `run_training.py` in another terminal.

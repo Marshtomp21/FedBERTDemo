@@ -49,36 +49,42 @@ class WikiTextDataset(Dataset):
 def get_dataloaders(num_clients, batch_size):
     print("Loading WikiText dataset...")
 
-    raw_dataset = load_dataset("wikitext", 'wikitext-2-raw-v1', split="train")
+    data_files = {"train": "wikitext_data/train.txt", "validation": "wikitext_data/validation.txt"}
 
-    texts = [line for line in raw_dataset['text'] if len(line.strip()) > 0]
-
-    texts = texts[:10000]
+    train_texts = [line for line in load_dataset("text", data_files=data_files, split="train")['text'] if len(line.strip()) > 0][:10000]
+    val_texts = [line for line in load_dataset("text", data_files=data_files, split="validation")['text'] if
+                 len(line.strip()) > 0][:1000]
 
     tokenizer = RobertaTokenizer.from_pretrained(MODEL_NAME)
 
-    full_dataset = WikiTextDataset(texts, tokenizer)
+    train_dataset = WikiTextDataset(train_texts, tokenizer)
+    val_dataset = WikiTextDataset(val_texts, tokenizer)
 
     #将数据分发给多个客户端
 
-    total_size = len(full_dataset)
-    indices = list(range(total_size))
-    split_size = total_size // num_clients
+    total_train_size = len(train_dataset)
+    total_val_size = len(val_dataset)
+    train_indices = list(range(total_train_size))
+    val_indices = list(range(total_val_size))
+    train_split_size = total_train_size // num_clients
+    val_split_size = total_val_size // num_clients
     client_dataloaders = []
 
     for i in range(num_clients):
-        start_idx = i * split_size
-        end_idx = (i + 1) * split_size if i != num_clients - 1 else total_size
-        client_indices = indices[start_idx:end_idx]
-        client_dataset = Subset(full_dataset, client_indices)
-        loader = DataLoader(client_dataset, batch_size=batch_size, shuffle=True)
-        client_dataloaders.append(loader)
+        train_start, train_end = i * train_split_size, (i + 1) * train_split_size
+        client_train_dataset = Subset(train_dataset, train_indices[train_start:train_end])
+        train_loader = DataLoader(client_train_dataset, batch_size=batch_size, shuffle=True)
 
-        print(f"客户端 {i} 分配到了 {len(client_dataset)} 条数据。")
+        val_start, val_end = i * val_split_size, (i + 1) * val_split_size
+        client_val_dataset = Subset(val_dataset, val_indices[val_start:val_end])
+        val_loader = DataLoader(client_val_dataset, batch_size=batch_size, shuffle=False)
+
+        client_dataloaders.append({'train': train_loader, 'val': val_loader})
+        print(f"客户端 {i} 分配到 {len(client_train_dataset)} 条训练数据, {len(client_val_dataset)} 条验证数据。")
 
     return client_dataloaders
 
 if __name__ == "__main__":
-    dataloaders = get_dataloaders(num_clients=5, batch_size=8)
+    dataloaders = get_dataloaders(num_clients=5, batch_size=64)
     print(f"总共创建了 {len(dataloaders)} 个客户端数据加载器。")
 

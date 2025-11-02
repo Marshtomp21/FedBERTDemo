@@ -40,7 +40,7 @@ class ClientTrainer:
     def train_epoch(self):
         self.model.train()
         total_loss = 0
-        for i, batch in enumerate(self.dataloader):
+        for i, batch in enumerate(self.dataloader['train']):
             input_ids = batch['input_ids']
             attention_mask = batch['attention_mask']
             labels = batch['labels']
@@ -71,7 +71,31 @@ class ClientTrainer:
             self.optimizer.step()
             total_loss += loss.item()
             #每个epoch仅训练几个step
-            # if i >= 5:
-            #    break
+            if i >= 5:
+                break
         avg_loss = total_loss / (i + 1)
         print(f"Client {self.client_id} - Average Loss: {avg_loss:.4f}")
+    def evaluate(self):
+        self.model.eval()
+        total_loss = 0
+        with torch.no_grad():
+            for i, batch in enumerate(self.dataloader['val']):
+                input_ids = batch['input_ids']
+                attention_mask = batch['attention_mask']
+                labels = batch['labels']
+
+                client_activations, attention_mask_to_server = self.model.forward_part1(input_ids, attention_mask)
+
+                buffer_fwd = io.BytesIO()
+                torch.save({'activations': client_activations, 'attention_mask': attention_mask_to_server}, buffer_fwd)
+                response_fwd = requests.post(f"{self.server_url}/forward_eval", data=buffer_fwd.getvalue())
+
+                server_output = torch.load(io.BytesIO(response_fwd.content), weights_only=False)
+                final_output = self.model.forward_part2(server_output)
+                loss = self.loss_fn(final_output.view(-1, self.model.config.vocab_size), labels.view(-1))
+
+                total_loss += loss.item()
+
+        avg_loss = total_loss / len(self.dataloader['val'])
+        print(f"Client {self.client_id} - Validate Average Loss: {avg_loss:.4f}")
+        return avg_loss

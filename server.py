@@ -79,6 +79,29 @@ def backward_pass():
     torch.save(grad_to_client, buffer)
     return buffer.getvalue()
 
+@app.route("/forward_eval", methods=["POST"])
+def forward_eval_pass():
+    data = request.get_data()
+    buffer = io.BytesIO(data)
+    received_tensors = torch.load(buffer, weights_only=False)
+
+    client_activations = received_tensors['activations']
+    attention_mask = received_tensors['attention_mask']
+
+    with torch.no_grad():
+        server_output = server_model(client_activations, attention_mask)
+
+    buffer = io.BytesIO()
+    torch.save(server_output, buffer)
+    return buffer.getvalue()
+
+@app.route("/save_model", methods=["GET"])
+def save_model():
+    torch.save(server_model.state_dict(), "server_model.pth")
+    print("服务器模型已保存到 server_model.pth")
+    return "Model saved", 200
+
+#记得传到服务器上运行的时候修改port
 if __name__ == "__main__":
 
     print("服务器正在 http://127.0.0.1:2778 运行...")
