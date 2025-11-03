@@ -62,7 +62,7 @@ class ClientTrainer:
             grad_to_server = server_output.grad
 
             buffer_bwd = io.BytesIO()
-            torch.save(grad_to_server, buffer_bwd)
+            torch.save({'client_id': self.client_id, 'gradient': grad_to_server}, buffer_bwd)
             response_bwd = requests.post(f"{self.server_url}/backward", data=buffer_bwd.getvalue())
 
             grad_from_server = torch.load(io.BytesIO(response_bwd.content), weights_only=False)

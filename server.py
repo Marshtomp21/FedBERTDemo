@@ -65,7 +65,7 @@ def forward_pass():
     received_data = torch.load(buffer, weights_only=False)
 
     client_id = received_data['client_id']
-    client_activations = received_data['activations'].require_grad_()
+    client_activations = received_data['activations'].requires_grad_()
     attention_mask = received_data['attention_mask']
 
     model = client_models[client_id]

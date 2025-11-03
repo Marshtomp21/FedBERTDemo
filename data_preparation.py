@@ -49,11 +49,11 @@ class WikiTextDataset(Dataset):
 def get_dataloaders(num_clients, batch_size):
     print("Loading WikiText dataset...")
 
-    data_files = {"train": "wikitext_data/train.txt", "validation": "wikitext_data/validation.txt"}
+    train_dataset_raw = load_dataset('wikitext', 'wikitext-2-raw-v1', split='train')
+    val_dataset_raw = load_dataset('wikitext', 'wikitext-2-raw-v1', split='validation')
 
-    train_texts = [line for line in load_dataset("text", data_files=data_files, split="train")['text'] if len(line.strip()) > 0][:10000]
-    val_texts = [line for line in load_dataset("text", data_files=data_files, split="validation")['text'] if
-                 len(line.strip()) > 0][:1000]
+    train_texts = [line for line in train_dataset_raw['text'] if len(line.strip()) > 0][:10000]
+    val_texts = [line for line in val_dataset_raw['text'] if len(line.strip()) > 0][:1000]
 
     tokenizer = RobertaTokenizer.from_pretrained(MODEL_NAME)
 

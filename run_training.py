@@ -4,10 +4,10 @@ import requests
 import multiprocessing
 
 NUM_CLIENTS = 5
-BATCH_SIZE = 64
-GLOBAL_ROUNDS = 10
-LOCAL_EPOCHS = 50
-SERVER_URL = "http://192.168.1.151:16805"
+BATCH_SIZE = 8
+GLOBAL_ROUNDS = 1
+LOCAL_EPOCHS = 5
+SERVER_URL = "http://172.18.211.142:2778"
 
 def client_task(client_id, dataloader):
     print(f"Client {client_id} starting training...")
